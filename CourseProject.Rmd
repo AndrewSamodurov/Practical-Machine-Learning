@@ -1,0 +1,139 @@
+---
+title: "Course Project"
+author: "Andrew Samodurov"
+date: "23 October 2015 г."
+output: html_document
+---
+## Course Project - Predicting the manner of doing exercises
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. The goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. http://groupware.les.inf.puc-rio.br/har
+
+## Data 
+
+The training data for this project are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+### Libraries
+```{r warning=FALSE}
+library(AppliedPredictiveModeling)
+library(caret)
+library(rattle)
+library(rpart.plot)
+library(randomForest)
+```
+
+### Downloading Train and Test datasets
+To make this research reproducible, it make sence to download data from the source site:
+``` {r}
+train <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", na.strings=c("NA", ""), header = T)
+
+dim(train)
+
+test <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", na.strings=c("NA", ""), header = T)
+dim(test)
+```
+So we have two datasets with equvivalent numbers of colomns(variables). Let`s do some manipulating with Train data to make it tidy:
+
+### Summarize number of NA values
+First we calculate the number of NA values in Train dataset to decide which variables we can neglect.
+``` {r}
+notNA_length <- as.vector(apply(train, 2, function(x) {length(which(!is.na(x)))}))
+summary(notNA_length)
+col_to_drop <- notNA_length < mean(notNA_length)
+```
+
+As we can se, it is possible to drop ```r sum(col_to_drop)``` colomns where number of NA`s is too big. Also we can drop the first seven colomn - they are not usable for learning.
+```{r}
+train <- train[, !col_to_drop]
+train <- train[, -c(1:7)]
+dim(train)
+test <- test[, !col_to_drop]
+test <- test[, -c(1:7)]
+dim(test)
+names(train)
+```
+Therefore, we have 52 covariates to make a prediction.
+
+### Checking for covariates
+Some of covariates may have near zero variablility, so we need to check that.
+```{r}
+nzv <- nearZeroVar(train, saveMetrics = T)
+sum(nzv$zeroVar)
+sum(nzv$nzv)
+```
+
+As we can see, there are no such variables.
+
+### Partition
+Now we will make a partition to split the data into train and test sets:
+```{r}
+Train <- createDataPartition(y=train$classe, p=0.6, list=FALSE)
+Training <- train[Train, ]
+Testing <- train[-Train, ]
+dim(Training); dim(Testing)
+```
+60% of initial data will be in a Training set and other 40% will helps us to calculate an accuracy.
+
+### PCA
+First, let`s doing some Principal Component Analysis.
+```{r}
+svd1 <- svd(Training[, -53])
+par(mfrow = c(1, 2))
+plot(svd1$d, pch = 19, ylab = "Singular Values")
+plot(svd1$d / sum(svd1$d), pch = 19, ylab = "Singular Values Quantiles")
+par(mfrow = c(1, 1))
+sdd <- svd1$d / sum(svd1$d)
+sum(sdd[-c(1:20)])
+```
+
+As we can see, first 20 principal components cover more then 93% of variation.
+
+
+## Fitting Models
+
+### Decision Tree
+First, we will try to make a simple prediction model - decision tree.
+```{r}
+modelFit1 <- rpart(Training$classe ~ ., data = Training, method="class")
+fancyRpartPlot(modelFit1)
+
+prediction1 <- predict(modelFit1, Testing, type = "class")
+confusionMatrix(prediction1, Testing$classe)
+
+```
+As we can see,  Accuracy is 73% which is not good enough. Let`s try some more complicated methods such as Random Forest. 
+
+### Random Forest
+```{r}
+modelFit2 <- randomForest(classe ~ ., data = Training)
+prediction2 <- predict(modelFit2, Testing, type = "class")
+confusionMatrix(prediction2, Testing$classe)
+```
+The Accuracy of this method is much bigger, it`s almost 100%, so we will predict Classes for Test set using this model.
+
+## Prediction
+To predict a manner of doing exercise we will use the Random Forest classifier which shows the best accuracy.
+```{r}
+Prediction <- predict(modelFit2, test, type = "class")
+```
+
+To finish this course project we need to save results of predictin in text files:
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(Prediction)
+```
+
+### All predictions are correct.
